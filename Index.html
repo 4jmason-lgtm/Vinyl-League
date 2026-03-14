@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vinyl League</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0d0c0e;
+    --surface: #161418;
+    --surface2: #1e1b21;
+    --border: #2a2630;
+    --accent: #e8462a;
+    --accent2: #f4a261;
+    --gold: #f5c842;
+    --text: #f0eaf5;
+    --muted: #7a6f85;
+    --success: #4caf82;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.4;
+  }
+
+  /* ── LOADING OVERLAY ── */
+  #loadingOverlay {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px; z-index: 9000;
+    transition: opacity 0.4s;
+  }
+  #loadingOverlay.hidden { opacity: 0; pointer-events: none; }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── CONFIG BANNER ── */
+  #configBanner {
+    background: linear-gradient(135deg, #1a0f0a, #2a1505);
+    border-bottom: 1px solid rgba(232,70,42,0.4);
+    padding: 14px 32px;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.85rem;
+  }
+  #configBanner.show { display: flex; }
+  #configBanner strong { color: var(--accent); }
+
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* ── HEADER ── */
+  header {
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+    background: rgba(13,12,14,0.92);
+    backdrop-filter: blur(12px);
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem; font-weight: 900;
+    letter-spacing: -0.5px;
+    display: flex; align-items: center; gap: 10px;
+    cursor: pointer;
+  }
+
+  .logo-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%,100% { transform:scale(1); opacity:1; }
+    50% { transform:scale(1.4); opacity:0.7; }
+  }
+
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .current-player-badge {
+    display: flex; align-items: center; gap: 7px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 0.8rem; font-weight: 600;
+    cursor: pointer;
+  }
+  .cpb-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* ── BUTTONS ── */
+  .btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.85rem; font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 10px 20px;
+    border-radius: 8px; border: none;
+    cursor: pointer;
+    transition: all 0.18s ease;
+  }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover:not(:disabled) { background: #d63a1f; transform: translateY(-1px); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover:not(:disabled) { background: var(--border); }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+  .btn-gold { background: var(--gold); color: #1a1400; font-weight: 700; }
+  .btn-gold:hover:not(:disabled) { background: #e8b800; transform: translateY(-1px); }
+  .btn-lg { padding: 14px 28px; font-size: 1rem; border-radius: 10px; }
+  .btn-sm { padding: 7px 14px; font-size: 0.78rem; }
+
+  /* ── HOME ── */
+  #home { max-width: 900px; margin: 0 auto; padding: 60px 32px; }
+
+  .hero { text-align: center; margin-bottom: 60px; }
+  .hero h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(3rem,8vw,5.5rem);
+    font-weight: 900; line-height: 1; letter-spacing: -2px; margin-bottom: 16px;
+  }
+  .hero h1 em { font-style: italic; color: var(--accent); }
+  .hero p { color: var(--muted); font-size: 1.1rem; max-width: 480px; margin: 0 auto 36px; line-height: 1.6; }
+  .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+  .section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem; font-weight: 700; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-title::after { content:''; flex:1; height:1px; background:var(--border); }
+
+  .league-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(260px,1fr)); gap: 16px; }
+
+  .league-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px;
+    cursor: pointer; transition: all 0.2s ease;
+    position: relative; overflow: hidden;
+  }
+  .league-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(232,70,42,0.15); }
+  .league-card::before { content:''; position:absolute; top:0;left:0;right:0; height:3px; background: linear-gradient(90deg,var(--accent),var(--accent2)); }
+
+  .league-name { font-family: 'Playfair Display', serif; font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+  .league-meta { font-size: 0.8rem; color: var(--muted); display: flex; gap: 14px; margin-bottom: 14px; }
+
+  .invite-code-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 8px; font-size: 0.72rem;
+    font-family: monospace; font-weight: 700; letter-spacing: 1px;
+    color: var(--accent2); cursor: pointer;
+  }
+  .invite-code-chip:hover { border-color: var(--accent2); }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.8); backdrop-filter: blur(6px);
+    z-index: 500; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 18px; padding: 32px;
+    width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto;
+    position: relative;
+  }
+  .modal h2 { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 700; margin-bottom: 6px; }
+  .modal-sub { color: var(--muted); font-size: 0.88rem; margin-bottom: 24px; }
+  .form-group { margin-bottom: 18px; }
+  .form-group label { display:block; font-size:0.82rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:8px; }
+  .form-input { width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; color:var(--text); font-family:'DM Sans',sans-serif; font-size:0.92rem; transition:border-color 0.15s; }
+  .form-input:focus { outline:none; border-color:var(--accent); }
+  .form-input::placeholder { color:var(--muted); }
+  textarea.form-input { resize:vertical; min-height:80px; }
+  .modal-close { position:absolute; top:16px;right:16px; background:var(--surface2); border:1px solid var(--border); border-radius:50%; width:32px;height:32px; display:flex;align-items:center;justify-content:center; cursor:pointer; color:var(--muted); font-size:1.1rem; transition:all 0.15s; }
+  .modal-close:hover { color:var(--text); background:var(--border); }
+  .modal-footer { display:flex; gap:10px; justify-content:flex-end; margin-top:24px; padding-top:20px; border-top:1px solid var(--border); }
+
+  /* ── LEAGUE SCREEN ── */
+  #league { max-width: 960px; margin: 0 auto; padding: 36px 32px; }
+
+  .league-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:36px; gap:20px; flex-wrap:wrap; }
+  .league-header-info h2 { font-family:'Playfair Display',serif; font-size:2.2rem; font-weight:900; letter-spacing:-1px; }
+
+  .tab-nav { display:flex; border-bottom:1px solid var(--border); margin-bottom:24px; }
+  .tab-btn { padding:12px 20px; font-size:0.88rem; font-weight:600; color:var(--muted); background:none; border:none; cursor:pointer; font-family:'DM Sans',sans-serif; border-bottom:2px solid transparent; transition:all 0.15s; margin-bottom:-1px; }
+  .tab-btn:hover { color:var(--text); }
+  .tab-btn.active { color:var(--text); border-bottom-color:var(--accent); }
+  .tab-pane { display:none; }
+  .tab-pane.active { display:block; }
+
+  .rounds-tabs { display:flex; gap:8px; margin-bottom:28px; overflow-x:auto; padding-bottom:4px; }
+  .round-tab { flex-shrink:0; padding:8px 18px; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--muted); transition:all 0.15s; }
+  .round-tab:hover { color:var(--text); border-color:var(--muted); }
+  .round-tab.active { background:var(--accent); color:white; border-color:var(--accent); }
+
+  .round-stage { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:24px; margin-bottom:24px; }
+  .round-stage-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
+  .round-theme { font-family:'Playfair Display',serif; font-size:1.4rem; font-weight:700; font-style:italic; color:var(--accent2); }
+
+  .submission-list { display:flex; flex-direction:column; gap:12px; }
+  .submission-item { display:flex; align-items:center; gap:14px; background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:12px 16px; transition:all 0.15s; }
+  .submission-item:hover { border-color:var(--muted); }
+  .sub-rank { width:28px;height:28px; border-radius:50%; background:var(--surface); border:1px solid var(--border); display:flex;align-items:center;justify-content:center; font-size:0.78rem; font-weight:700; color:var(--muted); flex-shrink:0; }
+  .sub-rank.gold { background:var(--gold); color:#1a1400; border-color:var(--gold); }
+  .sub-rank.silver { background:#b0b0b0; color:#1a1a1a; border-color:#b0b0b0; }
+  .sub-rank.bronze { background:#cd7f32; color:#fff; border-color:#cd7f32; }
+  .sub-art { width:48px;height:48px; border-radius:6px; background:var(--surface); border:1px solid var(--border); display:flex;align-items:center;justify-content:center; font-size:1.3rem; flex-shrink:0; }
+  .sub-info { flex:1; min-width:0; }
+  .sub-song { font-weight:600; font-size:0.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sub-artist { color:var(--muted); font-size:0.8rem; margin-top:2px; }
+  .sub-submitter { font-size:0.75rem; color:var(--accent2); margin-top:2px; }
+  .sub-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+
+  .apple-link { display:inline-flex; align-items:center; gap:4px; font-size:0.78rem; color:var(--muted); text-decoration:none; padding:5px 10px; border-radius:6px; border:1px solid var(--border); transition:all 0.15s; }
+  .apple-link:hover { color:var(--text); border-color:var(--muted); }
+  .score-badge { background:rgba(245,200,66,0.15); color:var(--gold); border:1px solid rgba(245,200,66,0.3); border-radius:20px; padding:4px 12px; font-size:0.8rem; font-weight:700; }
+
+  .vote-meter { height:3px; background:var(--border); border-radius:2px; margin-top:8px; overflow:hidden; }
+  .vote-meter-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--accent2)); border-radius:2px; transition:width 0.5s ease; }
+
+  .stage-pill { display:inline-flex; align-items:center; gap:6px; padding:5px 14px; border-radius:20px; font-size:0.78rem; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; }
+  .stage-submit { background:rgba(244,162,97,0.15); color:var(--accent2); }
+  .stage-vote { background:rgba(76,175,130,0.15); color:var(--success); }
+  .stage-results { background:rgba(245,200,66,0.15); color:var(--gold); }
+  .stage-dot { width:6px;height:6px; border-radius:50%; background:currentColor; animation:pulse 1.5s infinite; }
+
+  .leaderboard { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+  .lb-header { padding:16px 20px; border-bottom:1px solid var(--border); font-family:'Playfair Display',serif; font-size:1.1rem; font-weight:700; }
+  .lb-row { display:flex; align-items:center; gap:14px; padding:14px 20px; border-bottom:1px solid var(--border); transition:background 0.12s; }
+  .lb-row:last-child { border-bottom:none; }
+  .lb-row:hover { background:var(--surface2); }
+  .lb-pos { width:24px; font-weight:700; font-size:0.88rem; color:var(--muted); text-align:center; }
+  .lb-avatar { width:36px;height:36px; border-radius:50%; display:flex;align-items:center;justify-content:center; font-weight:700; font-size:0.85rem; flex-shrink:0; }
+  .lb-name { flex:1; font-weight:600; font-size:0.9rem; }
+  .lb-pts { font-weight:700; font-size:0.9rem; color:var(--gold); }
+
+  .empty-state { text-align:center; padding:48px 20px; color:var(--muted); }
+  .empty-state .icon { font-size:2.5rem; margin-bottom:12px; }
+  .empty-state p { max-width:280px; margin:0 auto; font-size:0.9rem; line-height:1.5; }
+
+  #toast {
+    position:fixed; bottom:24px; left:50%;
+    transform:translateX(-50%) translateY(80px);
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:10px; padding:12px 20px;
+    font-size:0.88rem; font-weight:500;
+    z-index:9999; transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    white-space:nowrap; pointer-events:none;
+  }
+  #toast.show { transform:translateX(-50%) translateY(0); }
+  #toast.error { border-color:var(--accent); color:#ff9988; }
+
+  .search-results { position:absolute; top:100%; left:0;right:0; background:var(--surface); border:1px solid var(--border); border-radius:10px; z-index:100; max-height:280px; overflow-y:auto; margin-top:4px; box-shadow:0 16px 40px rgba(0,0,0,0.5); }
+  .search-result-item { display:flex; align-items:center; gap:12px; padding:10px 14px; cursor:pointer; transition:background 0.12s; border-bottom:1px solid var(--border); }
+  .search-result-item:last-child { border-bottom:none; }
+  .search-result-item:hover { background:var(--surface2); }
+  .sr-art { width:40px;height:40px; border-radius:5px; background:var(--surface2); flex-shrink:0; display:flex;align-items:center;justify-content:center; font-size:1.1rem; }
+  .sr-song { font-size:0.88rem; font-weight:600; }
+  .sr-artist { font-size:0.78rem; color:var(--muted); }
+  .search-wrapper { position:relative; }
+
+  /* Vote items */
+  .vote-item { display:flex; align-items:center; gap:12px; background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; cursor:pointer; transition:all 0.15s; }
+  .vote-item.selected { background:rgba(232,70,42,0.08); border-color:var(--accent); }
+  .vote-check { width:22px;height:22px; border-radius:50%; border:2px solid var(--border); display:flex;align-items:center;justify-content:center; font-size:0.75rem; transition:all 0.15s; flex-shrink:0; }
+  .vote-item.selected .vote-check { background:var(--accent); border-color:var(--accent); color:white; }
+
+  /* Real-time indicator */
+  .rt-dot {
+    width:7px;height:7px; border-radius:50%; background:var(--success);
+    box-shadow: 0 0 0 0 rgba(76,175,130,0.4);
+    animation: rt-pulse 2s infinite;
+  }
+  @keyframes rt-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(76,175,130,0.4); }
+    70% { box-shadow: 0 0 0 6px rgba(76,175,130,0); }
+    100% { box-shadow: 0 0 0 0 rgba(76,175,130,0); }
+  }
+
+  @media (max-width:600px) {
+    header { padding:16px 20px; }
+    #home,#league { padding:28px 20px; }
+    .hero h1 { font-size:2.8rem; }
+    .league-grid { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div style="color:var(--muted);font-size:0.88rem">Connecting…</div>
+</div>
+
+<!-- Config banner (shown when keys aren't set) -->
+<div id="configBanner">
+  ⚠️ <strong>Setup required:</strong> Replace <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> at the top of the &lt;script&gt; with your project credentials.
+</div>
+
+<header>
+  <div class="logo" onclick="goHome()">
+    <div class="logo-dot"></div>
+    Vinyl League
+    <div class="rt-dot" title="Live sync active" style="margin-left:4px"></div>
+  </div>
+  <div class="header-right">
+    <div id="currentPlayerBadge" class="current-player-badge" style="display:none" onclick="showSwitchPlayerModal()">
+      <div class="cpb-dot" id="cpbDot"></div>
+      <span id="cpbName"></span>
+      <span style="color:var(--muted);font-size:0.7rem">▾</span>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="showNewLeagueModal()">New League</button>
+    <button class="btn btn-ghost btn-sm" onclick="showJoinModal()">Join</button>
+  </div>
+</header>
+
+<!-- HOME -->
+<div id="home" class="screen active">
+  <div style="max-width:900px;margin:0 auto;padding:60px 32px">
+    <div class="hero">
+      <h1>Music.<br><em>Debated.</em></h1>
+      <p>Submit songs, vote anonymously, crown a winner. The ultimate playlist competition — now synced across all your devices.</p>
+      <div class="hero-actions">
+        <button class="btn btn-primary btn-lg" onclick="showNewLeagueModal()">🎵 Start a League</button>
+        <button class="btn btn-secondary btn-lg" onclick="showJoinModal()">Join with Code</button>
+      </div>
+    </div>
+    <div id="leagueListSection" style="display:none">
+      <div class="section-title">Your Leagues</div>
+      <div class="league-grid" id="leagueGrid"></div>
+    </div>
+    <div id="emptyHome" class="empty-state">
+      <div class="icon">🎧</div>
+      <p>No leagues yet. Create one to get started!</p>
+    </div>
+  </div>
+</div>
+
+<!-- LEAGUE -->
+<div id="league" class="screen">
+  <div style="max-width:960px;margin:0 auto;padding:36px 32px">
+    <div class="league-header">
+      <div>
+        <button class="btn btn-ghost btn-sm" onclick="goHome()" style="margin-bottom:12px">← Back</button>
+        <h2 id="leagueName" style="font-family:'Playfair Display',serif;font-size:2.2rem;font-weight:900;letter-spacing:-1px"></h2>
+        <p id="leagueDesc" style="color:var(--muted);margin-top:4px"></p>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:0.78rem;color:var(--muted)">Invite code:</span>
+          <span class="invite-code-chip" id="inviteCodeChip" onclick="copyInviteCode()">— <span style="font-size:0.68rem">📋</span></span>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="showNewRoundModal()">+ New Round</button>
+        <button class="btn btn-primary btn-sm" onclick="showSubmitModal()">Submit Song</button>
+      </div>
+    </div>
+
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="switchTab('rounds')">Rounds</button>
+      <button class="tab-btn" onclick="switchTab('leaderboard')">Leaderboard</button>
+      <button class="tab-btn" onclick="switchTab('players')">Players</button>
+    </div>
+
+    <div class="tab-pane active" id="tab-rounds">
+      <div class="rounds-tabs" id="roundsTabs"></div>
+      <div id="roundDetail"></div>
+    </div>
+    <div class="tab-pane" id="tab-leaderboard">
+      <div class="leaderboard" id="leaderboardContent"></div>
+    </div>
+    <div class="tab-pane" id="tab-players">
+      <div id="playersContent"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODALS ===== -->
+
+<!-- New League -->
+<div class="modal-overlay" id="newLeagueModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('newLeagueModal')">✕</button>
+    <h2>New League</h2>
+    <p class="modal-sub">Set up your music competition</p>
+    <div class="form-group">
+      <label>League Name</label>
+      <input class="form-input" id="nlName" placeholder="e.g. Office Playlist Wars" />
+    </div>
+    <div class="form-group">
+      <label>Description (optional)</label>
+      <input class="form-input" id="nlDesc" placeholder="A brief description..." />
+    </div>
+    <div class="form-group">
+      <label>Votes per player per round</label>
+      <input class="form-input" id="nlVotes" type="number" min="1" max="10" value="3" />
+    </div>
+    <div class="form-group">
+      <label>Your name (first player)</label>
+      <input class="form-input" id="nlPlayerName" placeholder="e.g. Alex" />
+    </div>
+    <div class="form-group">
+      <label>Your color</label>
+      <input type="color" id="nlPlayerColor" value="#e8462a" style="width:100%;height:44px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);cursor:pointer" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('newLeagueModal')">Cancel</button>
+      <button class="btn btn-primary" id="btnCreateLeague" onclick="createLeague()">Create League</button>
+    </div>
+  </div>
+</div>
+
+<!-- Join League -->
+<div class="modal-overlay" id="joinModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('joinModal')">✕</button>
+    <h2>Join a League</h2>
+    <p class="modal-sub">Enter the invite code from your friend</p>
+    <div class="form-group">
+      <label>Invite Code</label>
+      <input class="form-input" id="joinCode" placeholder="e.g. VINYL7" style="text-transform:uppercase;letter-spacing:2px;font-family:monospace;font-size:1.1rem" oninput="this.value=this.value.toUpperCase()" />
+    </div>
+    <div class="form-group">
+      <label>Your Name</label>
+      <input class="form-input" id="joinName" placeholder="e.g. Jordan" />
+    </div>
+    <div class="form-group">
+      <label>Your Color</label>
+      <input type="color" id="joinColor" value="#4caf82" style="width:100%;height:44px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);cursor:pointer" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('joinModal')">Cancel</button>
+      <button class="btn btn-primary" id="btnJoin" onclick="joinLeague()">Join League</button>
+    </div>
+  </div>
+</div>
+
+<!-- Switch Player (identity picker) -->
+<div class="modal-overlay" id="switchPlayerModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('switchPlayerModal')">✕</button>
+    <h2>Who are you?</h2>
+    <p class="modal-sub">Pick your player to submit and vote</p>
+    <div id="switchPlayerList" style="display:flex;flex-direction:column;gap:10px;margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- New Round -->
+<div class="modal-overlay" id="newRoundModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('newRoundModal')">✕</button>
+    <h2>New Round</h2>
+    <p class="modal-sub">Set the theme for this round</p>
+    <div class="form-group">
+      <label>Round Theme</label>
+      <input class="form-input" id="nrTheme" placeholder="e.g. Best song to cry to" />
+    </div>
+    <div class="form-group">
+      <label>Or randomize</label>
+      <button class="btn btn-secondary" onclick="randomTheme()" style="width:100%">🎲 Random Theme</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('newRoundModal')">Cancel</button>
+      <button class="btn btn-primary" id="btnCreateRound" onclick="createRound()">Start Round</button>
+    </div>
+  </div>
+</div>
+
+<!-- Submit Song -->
+<div class="modal-overlay" id="submitModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('submitModal')">✕</button>
+    <h2>Submit a Song</h2>
+    <p class="modal-sub" id="submitModalSub">Add your pick for this round</p>
+    <div class="form-group">
+      <label>Song Name</label>
+      <div class="search-wrapper">
+        <input class="form-input" id="songSearch" placeholder="Search or type a song..." autocomplete="off" oninput="handleSongSearch(this.value)" />
+        <div class="search-results" id="searchResults" style="display:none"></div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Artist</label>
+      <input class="form-input" id="songArtist" placeholder="Artist name" />
+    </div>
+    <div class="form-group">
+      <label>Apple Music Link (optional)</label>
+      <input class="form-input" id="songLink" placeholder="https://music.apple.com/..." />
+    </div>
+    <div class="form-group">
+      <label>Why this song? (optional)</label>
+      <textarea class="form-input" id="songNote" placeholder="Tell us why this fits the theme..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('submitModal')">Cancel</button>
+      <button class="btn btn-primary" id="btnSubmitSong" onclick="submitSong()">Submit 🎵</button>
+    </div>
+  </div>
+</div>
+
+<!-- Vote -->
+<div class="modal-overlay" id="voteModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('voteModal')">✕</button>
+    <h2>Cast Your Votes</h2>
+    <p class="modal-sub" id="voteModalSub"></p>
+    <div id="voteSongList" style="display:flex;flex-direction:column;gap:10px;margin-top:8px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('voteModal')">Cancel</button>
+      <button class="btn btn-gold" id="btnCastVotes" onclick="castVotes()">Submit Votes 🗳️</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  ⚙️  CONFIGURATION — replace these two values
+//      Supabase Dashboard → Settings → API
+// ═══════════════════════════════════════════════════════════
+const SUPABASE_URL  = 'https://fbyrxsanmalsbseyjupk.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZieXJ4c2FubWFsc2JzZXlqdXBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MDM0NzgsImV4cCI6MjA4OTA3OTQ3OH0.aEVrIMUOgS9ximvcfIU6tV3pejgzFFWTLjEHjmCjGb8';
+// ═══════════════════════════════════════════════════════════
+
+const CONFIGURED = !SUPABASE_URL.includes('YOUR_');
+
+// ── Init Supabase ──
+let sb = null;
+if (CONFIGURED) {
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+// ── App state ──
+let currentLeagueId = null;   // uuid
+let currentLeague   = null;   // full league object
+let currentPlayers  = [];
+let currentRounds   = [];
+let currentRoundIdx = 0;
+let currentPlayerId = null;   // the player identity this browser is using
+let realtimeChannel = null;
+let pendingVotes    = [];
+let currentVoteRoundId = null;
+
+const SONG_EMOJIS = ['🎵','🎶','🎸','🥁','🎹','🎺','🎻','🎤','🎧','🎷'];
+const THEMES = [
+  'Best song to cry to','Ultimate road trip banger','Song that defined your childhood',
+  'Best breakup anthem','Song for your villain arc','Best hidden gem no one knows',
+  'Song that slaps at 2am','Best intro of all time','Song that changed music forever',
+  'Perfect Monday morning song','Best collab of all time','Song under 2 minutes',
+  'Song that hits different after heartbreak','Best one-hit wonder','Song to play at full volume'
+];
+
+// ── Local cache of known leagues (for home screen) ──
+function getKnownLeagues() {
+  try { return JSON.parse(localStorage.getItem('vl_leagues') || '[]'); } catch { return []; }
+}
+function addKnownLeague(id, name) {
+  const list = getKnownLeagues();
+  if (!list.find(l => l.id === id)) { list.push({ id, name }); localStorage.setItem('vl_leagues', JSON.stringify(list)); }
+}
+function getStoredPlayerId(leagueId) {
+  return localStorage.getItem('vl_player_' + leagueId) || null;
+}
+function storePlayerId(leagueId, playerId) {
+  localStorage.setItem('vl_player_' + leagueId, playerId);
+}
+
+// ─────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────
+async function init() {
+  if (!CONFIGURED) {
+    document.getElementById('configBanner').classList.add('show');
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    return;
+  }
+  document.getElementById('loadingOverlay').classList.add('hidden');
+  await renderHome();
+}
+
+// ─────────────────────────────────────────────
+//  SCREENS
+// ─────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+async function goHome() {
+  // Unsubscribe from realtime
+  if (realtimeChannel) { await sb.removeChannel(realtimeChannel); realtimeChannel = null; }
+  currentLeagueId = null; currentLeague = null;
+  currentPlayers = []; currentRounds = [];
+  updatePlayerBadge();
+  showScreen('home');
+  await renderHome();
+}
+
+// ─────────────────────────────────────────────
+//  MODALS
+// ─────────────────────────────────────────────
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
+});
+
+// ─────────────────────────────────────────────
+//  TOAST
+// ─────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('error', isError);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ─────────────────────────────────────────────
+//  HOME
+// ─────────────────────────────────────────────
+async function renderHome() {
+  if (!CONFIGURED) return;
+  const known = getKnownLeagues();
+  const grid = document.getElementById('leagueGrid');
+  const empty = document.getElementById('emptyHome');
+  const section = document.getElementById('leagueListSection');
+
+  if (!known.length) {
+    section.style.display = 'none'; empty.style.display = 'block'; return;
+  }
+
+  // Fetch fresh data for all known leagues
+  const { data: leagues } = await sb.from('leagues').select('*, rounds(count), players(count)').in('id', known.map(l => l.id));
+
+  if (!leagues || !leagues.length) {
+    section.style.display = 'none'; empty.style.display = 'block'; return;
+  }
+
+  section.style.display = 'block'; empty.style.display = 'none';
+
+  grid.innerHTML = leagues.map(l => {
+    const playerCount = l.players?.[0]?.count || 0;
+    const roundCount  = l.rounds?.[0]?.count  || 0;
+    return `
+      <div class="league-card" onclick="openLeague('${l.id}')">
+        <div class="league-name">${escHtml(l.name)}</div>
+        <div class="league-meta">
+          <span>👥 ${playerCount} player${playerCount!==1?'s':''}</span>
+          <span>🎵 ${roundCount} round${roundCount!==1?'s':''}</span>
+        </div>
+        <span class="invite-code-chip" onclick="event.stopPropagation();navigator.clipboard.writeText('${l.invite_code}');showToast('Code copied! 📋')">${l.invite_code} 📋</span>
+      </div>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+//  CREATE LEAGUE
+// ─────────────────────────────────────────────
+function showNewLeagueModal() { openModal('newLeagueModal'); }
+
+async function createLeague() {
+  const name       = document.getElementById('nlName').value.trim();
+  const desc       = document.getElementById('nlDesc').value.trim();
+  const votes      = parseInt(document.getElementById('nlVotes').value) || 3;
+  const playerName = document.getElementById('nlPlayerName').value.trim();
+  const color      = document.getElementById('nlPlayerColor').value;
+
+  if (!name)       { showToast('Enter a league name', true); return; }
+  if (!playerName) { showToast('Enter your name', true); return; }
+
+  const btn = document.getElementById('btnCreateLeague');
+  btn.disabled = true; btn.textContent = 'Creating…';
+
+  try {
+    // Generate invite code
+    const { data: codeData } = await sb.rpc('generate_invite_code');
+    const inviteCode = codeData || Math.random().toString(36).slice(2,8).toUpperCase();
+
+    const { data: league, error: le } = await sb.from('leagues').insert({ name, description: desc, votes_per_player: votes, invite_code: inviteCode }).select().single();
+    if (le) throw le;
+
+    const { data: player, error: pe } = await sb.from('players').insert({ league_id: league.id, name: playerName, color }).select().single();
+    if (pe) throw pe;
+
+    storePlayerId(league.id, player.id);
+    addKnownLeague(league.id, league.name);
+    closeModal('newLeagueModal');
+    ['nlName','nlDesc','nlPlayerName'].forEach(id => document.getElementById(id).value = '');
+    showToast('League created! 🎉');
+    await openLeague(league.id);
+  } catch(e) {
+    showToast('Error: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Create League';
+  }
+}
+
+// ─────────────────────────────────────────────
+//  JOIN LEAGUE
+// ─────────────────────────────────────────────
+function showJoinModal() { openModal('joinModal'); }
+
+async function joinLeague() {
+  const code  = document.getElementById('joinCode').value.trim().toUpperCase();
+  const name  = document.getElementById('joinName').value.trim();
+  const color = document.getElementById('joinColor').value;
+
+  if (!code) { showToast('Enter an invite code', true); return; }
+  if (!name) { showToast('Enter your name', true); return; }
+
+  const btn = document.getElementById('btnJoin');
+  btn.disabled = true; btn.textContent = 'Joining…';
+
+  try {
+    const { data: league, error: le } = await sb.from('leagues').select('*').eq('invite_code', code).single();
+    if (le || !league) { showToast('League not found — check the code', true); return; }
+
+    // Check if player name already exists
+    const { data: existing } = await sb.from('players').select('id').eq('league_id', league.id).eq('name', name).maybeSingle();
+    let playerId;
+    if (existing) {
+      // Re-use existing player (rejoin)
+      playerId = existing.id;
+      showToast(`Welcome back, ${name}! 👋`);
+    } else {
+      const { data: player, error: pe } = await sb.from('players').insert({ league_id: league.id, name, color }).select().single();
+      if (pe) throw pe;
+      playerId = player.id;
+      showToast(`Joined "${league.name}"! 🎉`);
+    }
+
+    storePlayerId(league.id, playerId);
+    addKnownLeague(league.id, league.name);
+    closeModal('joinModal');
+    ['joinCode','joinName'].forEach(id => document.getElementById(id).value = '');
+    await openLeague(league.id);
+  } catch(e) {
+    showToast('Error: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Join League';
+  }
+}
+
+// ─────────────────────────────────────────────
+//  OPEN LEAGUE + REALTIME
+// ─────────────────────────────────────────────
+async function openLeague(id) {
+  showScreen('league');
+  currentLeagueId = id;
+  setLoading(true);
+
+  await loadLeagueData();
+  setLoading(false);
+
+  // Restore player identity
+  const storedId = getStoredPlayerId(id);
+  if (storedId && currentPlayers.find(p => p.id === storedId)) {
+    currentPlayerId = storedId;
+  } else if (currentPlayers.length === 1) {
+    currentPlayerId = currentPlayers[0].id;
+    storePlayerId(id, currentPlayerId);
+  } else {
+    currentPlayerId = null;
+    showSwitchPlayerModal();
+  }
+
+  updatePlayerBadge();
+  subscribeRealtime();
+  renderLeaguePage();
+}
+
+async function loadLeagueData() {
+  const [{ data: league }, { data: players }, { data: rounds }] = await Promise.all([
+    sb.from('leagues').select('*').eq('id', currentLeagueId).single(),
+    sb.from('players').select('*').eq('league_id', currentLeagueId).order('joined_at'),
+    sb.from('rounds').select('*, submissions(*, votes(*))').eq('league_id', currentLeagueId).order('position')
+  ]);
+  currentLeague  = league;
+  currentPlayers = players || [];
+  currentRounds  = (rounds || []).map(r => ({
+    ...r,
+    submissions: (r.submissions || []).sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at))
+  }));
+}
+
+// ─────────────────────────────────────────────
+//  REALTIME SUBSCRIPTIONS
+// ─────────────────────────────────────────────
+function subscribeRealtime() {
+  if (realtimeChannel) sb.removeChannel(realtimeChannel);
+
+  realtimeChannel = sb.channel('league-' + currentLeagueId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'players',     filter: `league_id=eq.${currentLeagueId}` }, onRealtimeChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds',      filter: `league_id=eq.${currentLeagueId}` }, onRealtimeChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions'                                             }, onRealtimeChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'votes'                                                   }, onRealtimeChange)
+    .subscribe();
+}
+
+let reloadTimer;
+async function onRealtimeChange() {
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(async () => {
+    await loadLeagueData();
+    renderLeaguePage();
+  }, 300);
+}
+
+// ─────────────────────────────────────────────
+//  PLAYER IDENTITY
+// ─────────────────────────────────────────────
+function updatePlayerBadge() {
+  const badge = document.getElementById('currentPlayerBadge');
+  if (!currentPlayerId) { badge.style.display = 'none'; return; }
+  const p = currentPlayers.find(x => x.id === currentPlayerId);
+  if (!p) { badge.style.display = 'none'; return; }
+  badge.style.display = 'flex';
+  document.getElementById('cpbDot').style.background = p.color;
+  document.getElementById('cpbName').textContent = p.name;
+}
+
+function showSwitchPlayerModal() {
+  if (!currentPlayers.length) { showToast('No players yet — add one first', true); return; }
+  const list = document.getElementById('switchPlayerList');
+  list.innerHTML = currentPlayers.map(p => `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;background:${currentPlayerId===p.id?'rgba(232,70,42,0.1)':'var(--surface2)'};border:1px solid ${currentPlayerId===p.id?'var(--accent)':'var(--border)'};cursor:pointer;transition:all 0.15s"
+         onclick="selectPlayer('${p.id}')">
+      <div style="width:36px;height:36px;border-radius:50%;background:${p.color};display:flex;align-items:center;justify-content:center;font-weight:700">${p.name[0].toUpperCase()}</div>
+      <div style="flex:1;font-weight:600">${escHtml(p.name)}</div>
+      ${currentPlayerId===p.id?'<span style="color:var(--accent);font-size:0.8rem">✓ You</span>':''}
+    </div>`).join('');
+  openModal('switchPlayerModal');
+}
+
+function selectPlayer(id) {
+  currentPlayerId = id;
+  storePlayerId(currentLeagueId, id);
+  updatePlayerBadge();
+  closeModal('switchPlayerModal');
+  showToast('Playing as ' + currentPlayers.find(p=>p.id===id)?.name);
+}
+
+// ─────────────────────────────────────────────
+//  RENDER LEAGUE PAGE
+// ─────────────────────────────────────────────
+function renderLeaguePage() {
+  if (!currentLeague) return;
+  document.getElementById('leagueName').textContent = currentLeague.name;
+  document.getElementById('leagueDesc').textContent = currentLeague.description || '';
+  document.getElementById('inviteCodeChip').innerHTML = `${currentLeague.invite_code} <span style="font-size:0.68rem">📋</span>`;
+  renderRoundsTabs();
+  renderLeaderboard();
+  renderPlayers();
+}
+
+function copyInviteCode() {
+  navigator.clipboard.writeText(currentLeague?.invite_code || '');
+  showToast('Invite code copied! 📋');
+}
+
+// ─────────────────────────────────────────────
+//  TABS
+// ─────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', ['rounds','leaderboard','players'][i]===tab));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+}
+
+// ─────────────────────────────────────────────
+//  ROUNDS
+// ─────────────────────────────────────────────
+function showNewRoundModal() { openModal('newRoundModal'); }
+
+function randomTheme() {
+  document.getElementById('nrTheme').value = THEMES[Math.floor(Math.random()*THEMES.length)];
+}
+
+async function createRound() {
+  const theme = document.getElementById('nrTheme').value.trim();
+  if (!theme) { showToast('Enter a round theme', true); return; }
+
+  const btn = document.getElementById('btnCreateRound');
+  btn.disabled = true; btn.textContent = 'Creating…';
+
+  const position = currentRounds.length + 1;
+  const { error } = await sb.from('rounds').insert({ league_id: currentLeagueId, theme, position, stage: 'submit' });
+
+  btn.disabled = false; btn.textContent = 'Start Round';
+  if (error) { showToast('Error: ' + error.message, true); return; }
+  document.getElementById('nrTheme').value = '';
+  closeModal('newRoundModal');
+  showToast(`Round started! 🎤`);
+  // Realtime will refresh, but also set index to last
+  currentRoundIdx = currentRounds.length; // will be updated after reload
+}
+
+function renderRoundsTabs() {
+  const rounds = currentRounds;
+  const tabs   = document.getElementById('roundsTabs');
+
+  if (!rounds.length) {
+    tabs.innerHTML = '';
+    document.getElementById('roundDetail').innerHTML = `
+      <div class="empty-state"><div class="icon">🎵</div><p>No rounds yet. Start the first one!</p><br><br>
+      <button class="btn btn-primary" onclick="showNewRoundModal()">Start Round 1</button></div>`;
+    return;
+  }
+
+  if (currentRoundIdx >= rounds.length) currentRoundIdx = rounds.length - 1;
+
+  tabs.innerHTML = rounds.map((r,i) => `
+    <div class="round-tab${i===currentRoundIdx?' active':''}" onclick="selectRound(${i})">Round ${r.position}</div>`).join('');
+
+  renderRoundDetail(rounds[currentRoundIdx]);
+}
+
+function selectRound(i) { currentRoundIdx = i; renderRoundsTabs(); }
+
+function renderRoundDetail(round) {
+  const el = document.getElementById('roundDetail');
+  const stageLabels  = { submit:'Submitting', vote:'Voting', results:'Results' };
+  const stageClasses = { submit:'stage-submit', vote:'stage-vote', results:'stage-results' };
+
+  const subs = round.submissions || [];
+
+  // Compute vote totals
+  const voteTotals = {};
+  subs.forEach(s => { voteTotals[s.id] = (s.votes || []).length; });
+
+  const sortedSubs = round.stage === 'results'
+    ? [...subs].sort((a,b) => (voteTotals[b.id]||0)-(voteTotals[a.id]||0))
+    : subs;
+
+  const myVotes = round.stage !== 'submit'
+    ? (subs.flatMap(s => s.votes || []).filter(v => v.voter_player_id === currentPlayerId).map(v => v.submission_id))
+    : [];
+
+  let actionBtn = '';
+  if (round.stage === 'submit') actionBtn = `
+    <button class="btn btn-primary btn-sm" onclick="showSubmitModal()">Submit Song</button>
+    <button class="btn btn-secondary btn-sm" onclick="advanceRound('${round.id}','vote')">→ Move to Voting</button>`;
+  if (round.stage === 'vote') actionBtn = `
+    <button class="btn btn-gold btn-sm" onclick="showVoteModal('${round.id}')">Cast Votes 🗳️</button>
+    <button class="btn btn-secondary btn-sm" onclick="advanceRound('${round.id}','results')">→ View Results</button>`;
+
+  el.innerHTML = `
+    <div class="round-stage">
+      <div class="round-stage-header">
+        <div>
+          <div class="round-theme">"${escHtml(round.theme)}"</div>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="stage-pill ${stageClasses[round.stage]}"><span class="stage-dot"></span>${stageLabels[round.stage]}</span>
+            <span style="font-size:0.8rem;color:var(--muted)">${subs.length} submission${subs.length!==1?'s':''}</span>
+            ${myVotes.length ? `<span style="font-size:0.78rem;color:var(--success)">✓ You voted</span>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${actionBtn}</div>
+      </div>
+      ${sortedSubs.length===0
+        ? `<div class="empty-state" style="padding:28px"><div class="icon">🎶</div><p>No submissions yet. Be the first!</p></div>`
+        : `<div class="submission-list">${sortedSubs.map((s,i)=>renderSubmission(s,i,round,voteTotals)).join('')}</div>`
+      }
+    </div>`;
+}
+
+function renderSubmission(s, i, round, voteTotals) {
+  const player = currentPlayers.find(p => p.id === s.player_id);
+  const votes  = voteTotals[s.id] || 0;
+  const maxVotes = Math.max(...Object.values(voteTotals), 1);
+  const pct = Math.round((votes/maxVotes)*100);
+
+  let rankClass = '';
+  if (round.stage==='results') { if(i===0) rankClass='gold'; else if(i===1) rankClass='silver'; else if(i===2) rankClass='bronze'; }
+
+  const linkHtml = s.apple_link ? `<a href="${escHtml(s.apple_link)}" target="_blank" class="apple-link">🍎 Listen</a>` : '';
+  const voteCount = round.stage!=='submit' ? `<span style="font-size:0.8rem;color:var(--muted)">${votes} vote${votes!==1?'s':''}</span>` : '';
+  const voteMeter = round.stage==='results' ? `<div class="vote-meter"><div class="vote-meter-fill" style="width:${pct}%"></div></div>` : '';
+  const scoreDisplay = round.stage==='results' ? `<span class="score-badge">+${votes}</span>` : '';
+
+  return `
+    <div class="submission-item">
+      <div class="sub-rank ${rankClass}">${round.stage==='results'?(i+1):'♪'}</div>
+      <div class="sub-art">${s.emoji||'🎵'}</div>
+      <div class="sub-info">
+        <div class="sub-song">${escHtml(s.song)}</div>
+        <div class="sub-artist">${escHtml(s.artist)}</div>
+        <div class="sub-submitter" style="color:${player?player.color:'var(--accent2)'}">${player?player.name:'?'}</div>
+        ${s.note?`<div style="font-size:0.78rem;color:var(--muted);font-style:italic;margin-top:3px">"${escHtml(s.note)}"</div>`:''}
+        ${voteMeter}
+      </div>
+      <div class="sub-actions">${voteCount}${scoreDisplay}${linkHtml}</div>
+    </div>`;
+}
+
+async function advanceRound(roundId, nextStage) {
+  if (nextStage==='vote' && !(currentRounds.find(r=>r.id===roundId)?.submissions?.length)) {
+    showToast('Need at least one submission first!', true); return;
+  }
+  const { error } = await sb.from('rounds').update({ stage: nextStage }).eq('id', roundId);
+  if (error) { showToast('Error: ' + error.message, true); return; }
+  showToast(nextStage==='vote' ? 'Voting phase open! 🗳️' : 'Results are in! 🏆');
+}
+
+// ─────────────────────────────────────────────
+//  SUBMIT SONG
+// ─────────────────────────────────────────────
+function showSubmitModal() {
+  if (!currentPlayerId) { showSwitchPlayerModal(); return; }
+  const round = currentRounds[currentRoundIdx];
+  if (!round || round.stage!=='submit') { showToast('This round is not accepting submissions', true); return; }
+  document.getElementById('submitModalSub').textContent = `For round: "${round.theme}"`;
+  document.getElementById('songSearch').value = '';
+  document.getElementById('songArtist').value = '';
+  document.getElementById('songLink').value = '';
+  document.getElementById('songNote').value = '';
+  document.getElementById('searchResults').style.display = 'none';
+  openModal('submitModal');
+}
+
+const FAKE_SONGS = [
+  {song:'Blinding Lights',artist:'The Weeknd'},{song:'Bohemian Rhapsody',artist:'Queen'},
+  {song:'Smells Like Teen Spirit',artist:'Nirvana'},{song:'Shape of You',artist:'Ed Sheeran'},
+  {song:'Rolling in the Deep',artist:'Adele'},{song:'Lose Yourself',artist:'Eminem'},
+  {song:'Hotel California',artist:'Eagles'},{song:'Billie Jean',artist:'Michael Jackson'},
+  {song:'Dreams',artist:'Fleetwood Mac'},{song:'Africa',artist:'Toto'},
+  {song:'Mr. Brightside',artist:'The Killers'},{song:'September',artist:'Earth, Wind & Fire'},
+  {song:'Levitating',artist:'Dua Lipa'},{song:'Drivers License',artist:'Olivia Rodrigo'},
+  {song:'As It Was',artist:'Harry Styles'},{song:'Heat Waves',artist:'Glass Animals'},
+  {song:'Good 4 U',artist:'Olivia Rodrigo'},{song:'Flowers',artist:'Miley Cyrus'},
+  {song:'Anti-Hero',artist:'Taylor Swift'},{song:'Unholy',artist:'Sam Smith'},
+];
+
+let searchTimeout;
+function handleSongSearch(val) {
+  clearTimeout(searchTimeout);
+  const res = document.getElementById('searchResults');
+  if (!val.trim()) { res.style.display='none'; return; }
+  searchTimeout = setTimeout(() => {
+    const q = val.toLowerCase();
+    const matches = FAKE_SONGS.filter(s => s.song.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)).slice(0,6);
+    if (!matches.length) { res.style.display='none'; return; }
+    res.innerHTML = matches.map(s=>`
+      <div class="search-result-item" onclick="selectSong('${escAttr(s.song)}','${escAttr(s.artist)}')">
+        <div class="sr-art">🎵</div>
+        <div><div class="sr-song">${escHtml(s.song)}</div><div class="sr-artist">${escHtml(s.artist)}</div></div>
+      </div>`).join('');
+    res.style.display='block';
+  }, 200);
+}
+
+function selectSong(song, artist) {
+  document.getElementById('songSearch').value = song;
+  document.getElementById('songArtist').value = artist;
+  document.getElementById('searchResults').style.display='none';
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-wrapper')) document.getElementById('searchResults').style.display='none';
+});
+
+async function submitSong() {
+  if (!currentPlayerId) { showToast('Select a player identity first', true); return; }
+  const song   = document.getElementById('songSearch').value.trim();
+  const artist = document.getElementById('songArtist').value.trim();
+  const link   = document.getElementById('songLink').value.trim();
+  const note   = document.getElementById('songNote').value.trim();
+
+  if (!song)   { showToast('Enter a song name', true); return; }
+  if (!artist) { showToast('Enter the artist', true); return; }
+
+  const round = currentRounds[currentRoundIdx];
+  if (!round || round.stage!=='submit') { showToast('Submissions are closed', true); return; }
+
+  const alreadyIn = (round.submissions||[]).some(s => s.player_id === currentPlayerId);
+  if (alreadyIn) { showToast('You already submitted for this round!', true); return; }
+
+  const btn = document.getElementById('btnSubmitSong');
+  btn.disabled=true; btn.textContent='Submitting…';
+
+  const { error } = await sb.from('submissions').insert({
+    round_id: round.id,
+    player_id: currentPlayerId,
+    song, artist,
+    apple_link: link || null,
+    note: note || null,
+    emoji: SONG_EMOJIS[Math.floor(Math.random()*SONG_EMOJIS.length)]
+  });
+
+  btn.disabled=false; btn.textContent='Submit 🎵';
+  if (error) { showToast('Error: '+error.message, true); return; }
+  closeModal('submitModal');
+  showToast(`"${song}" submitted! 🎶`);
+}
+
+// ─────────────────────────────────────────────
+//  VOTING
+// ─────────────────────────────────────────────
+function showVoteModal(roundId) {
+  if (!currentPlayerId) { showSwitchPlayerModal(); return; }
+  const round = currentRounds.find(r => r.id===roundId);
+  if (!round || round.stage!=='vote') { showToast('Voting is not open', true); return; }
+
+  currentVoteRoundId = roundId;
+  pendingVotes = [];
+
+  // Pre-populate with existing votes from this player
+  const existing = (round.submissions||[]).flatMap(s=>s.votes||[]).filter(v=>v.voter_player_id===currentPlayerId).map(v=>v.submission_id);
+  pendingVotes = [...existing];
+
+  document.getElementById('voteModalSub').textContent = `Pick up to ${currentLeague.votes_per_player} for "${round.theme}"`;
+
+  const list = document.getElementById('voteSongList');
+  list.innerHTML = (round.submissions||[]).map(s => {
+    const player = currentPlayers.find(p=>p.id===s.player_id);
+    const sel = pendingVotes.includes(s.id);
+    return `
+      <div class="vote-item${sel?' selected':''}" id="vi_${s.id}" onclick="toggleVote('${s.id}')">
+        <div style="width:36px;height:36px;border-radius:6px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0">${s.emoji||'🎵'}</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:0.9rem">${escHtml(s.song)}</div>
+          <div style="font-size:0.78rem;color:var(--muted)">${escHtml(s.artist)}</div>
+        </div>
+        <div class="vote-check" id="vcheck_${s.id}">${sel?'✓':''}</div>
+      </div>`;
+  }).join('');
+
+  openModal('voteModal');
+}
+
+function toggleVote(songId) {
+  const idx = pendingVotes.indexOf(songId);
+  if (idx>=0) {
+    pendingVotes.splice(idx,1);
+  } else {
+    if (pendingVotes.length >= currentLeague.votes_per_player) {
+      showToast(`Max ${currentLeague.votes_per_player} votes`, true); return;
+    }
+    pendingVotes.push(songId);
+  }
+  document.querySelectorAll('[id^="vi_"]').forEach(el => {
+    const sid = el.id.replace('vi_','');
+    const isVoted = pendingVotes.includes(sid);
+    el.classList.toggle('selected', isVoted);
+    const check = document.getElementById('vcheck_'+sid);
+    check.textContent = isVoted ? '✓' : '';
+  });
+}
+
+async function castVotes() {
+  if (!currentPlayerId) { showToast('Select who you are first', true); return; }
+  if (!pendingVotes.length) { showToast('Pick at least one song!', true); return; }
+
+  const btn = document.getElementById('btnCastVotes');
+  btn.disabled=true; btn.textContent='Saving…';
+
+  // Delete old votes from this player for this round, then re-insert
+  await sb.from('votes').delete().eq('round_id', currentVoteRoundId).eq('voter_player_id', currentPlayerId);
+
+  const rows = pendingVotes.map(sid => ({
+    round_id: currentVoteRoundId,
+    voter_player_id: currentPlayerId,
+    submission_id: sid
+  }));
+
+  const { error } = await sb.from('votes').insert(rows);
+
+  btn.disabled=false; btn.textContent='Submit Votes 🗳️';
+  if (error) { showToast('Error: '+error.message, true); return; }
+  closeModal('voteModal');
+  showToast('Votes cast! 🗳️');
+}
+
+// ─────────────────────────────────────────────
+//  LEADERBOARD
+// ─────────────────────────────────────────────
+function renderLeaderboard() {
+  const el = document.getElementById('leaderboardContent');
+  if (!currentPlayers.length) {
+    el.innerHTML = `<div class="lb-header">🏆 Leaderboard</div><div class="empty-state" style="padding:36px"><div class="icon">🏆</div><p>No players yet</p></div>`;
+    return;
+  }
+
+  const pts = {};
+  currentPlayers.forEach(p => pts[p.id] = 0);
+  currentRounds.forEach(r => {
+    (r.submissions||[]).forEach(s => {
+      pts[s.player_id] = (pts[s.player_id]||0) + (s.votes||[]).length;
+    });
+  });
+
+  const ranked = [...currentPlayers].sort((a,b) => (pts[b.id]||0)-(pts[a.id]||0));
+
+  el.innerHTML = `
+    <div class="lb-header">🏆 Leaderboard</div>
+    ${ranked.map((p,i) => `
+      <div class="lb-row">
+        <div class="lb-pos">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
+        <div class="lb-avatar" style="background:${p.color}">${p.name[0].toUpperCase()}</div>
+        <div class="lb-name">${escHtml(p.name)}${p.id===currentPlayerId?' <span style="font-size:0.72rem;color:var(--muted)">(you)</span>':''}</div>
+        <div class="lb-pts">${pts[p.id]||0} pts</div>
+      </div>`).join('')}`;
+}
+
+// ─────────────────────────────────────────────
+//  PLAYERS TAB
+// ─────────────────────────────────────────────
+function renderPlayers() {
+  const el = document.getElementById('playersContent');
+  if (!currentPlayers.length) {
+    el.innerHTML = `<div class="empty-state"><div class="icon">👤</div><p>No players yet. Share the invite code!</p></div>`;
+    return;
+  }
+  const pts = {};
+  currentPlayers.forEach(p => pts[p.id] = 0);
+  currentRounds.forEach(r => {
+    (r.submissions||[]).forEach(s => { pts[s.player_id] = (pts[s.player_id]||0) + (s.votes||[]).length; });
+  });
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span style="color:var(--muted);font-size:0.88rem">${currentPlayers.length} player${currentPlayers.length!==1?'s':''}</span>
+      <span class="invite-code-chip" onclick="copyInviteCode()">Invite: ${currentLeague?.invite_code} 📋</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${currentPlayers.map(p => {
+        const songs = currentRounds.flatMap(r=>r.submissions||[]).filter(s=>s.player_id===p.id).length;
+        return `
+          <div style="display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid ${p.id===currentPlayerId?'var(--accent)':'var(--border)'};border-radius:10px;padding:14px 16px;transition:all 0.15s">
+            <div style="width:40px;height:40px;border-radius:50%;background:${p.color};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.9rem">${p.name[0].toUpperCase()}</div>
+            <div style="flex:1">
+              <div style="font-weight:600">${escHtml(p.name)}${p.id===currentPlayerId?' <span style="font-size:0.72rem;color:var(--accent)">(you)</span>':''}</div>
+              <div style="font-size:0.78rem;color:var(--muted);margin-top:2px">${songs} song${songs!==1?'s':''} submitted</div>
+            </div>
+            <div class="score-badge">${pts[p.id]||0} pts</div>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
+// ─────────────────────────────────────────────
+//  UTILS
+// ─────────────────────────────────────────────
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return String(s).replace(/'/g,"\\'"); }
+
+function setLoading(on) {
+  document.getElementById('loadingOverlay').classList.toggle('hidden', !on);
+}
+
+// ─────────────────────────────────────────────
+//  BOOT
+// ─────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
