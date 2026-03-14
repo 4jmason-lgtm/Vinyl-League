@@ -10,10 +10,10 @@
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=DM+Sans:wght@300;400;500;600&display=swap');
 
 :root {
-–bg: #0d0c0e;
-–surface: #161418;
-–surface2: #1e1b21;
-–border: #2a2630;
+–bg: #060508;
+–surface: #0f0d12;
+–surface2: #161318;
+–border: #221f28;
 –accent: #e8462a;
 –accent2: #f4a261;
 –gold: #f5c842;
@@ -141,6 +141,8 @@ transition: all 0.18s ease;
 .btn-ghost:hover:not(:disabled) { color: var(–text); border-color: var(–muted); }
 .btn-gold { background: var(–gold); color: #1a1400; font-weight: 700; }
 .btn-gold:hover:not(:disabled) { background: #e8b800; transform: translateY(-1px); }
+.btn-danger { background: rgba(232,70,42,0.15); color: #ff6b6b; border: 1px solid rgba(232,70,42,0.3); }
+.btn-danger:hover:not(:disabled) { background: rgba(232,70,42,0.25); border-color: var(–accent); }
 .btn-lg { padding: 14px 28px; font-size: 1rem; border-radius: 10px; }
 .btn-sm { padding: 7px 14px; font-size: 0.78rem; }
 
@@ -610,6 +612,20 @@ header { padding:14px 16px; }
   </div>
 </div>
 
+<!-- Confirm Delete Round -->
+
+<div class="modal-overlay" id="deleteRoundModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('deleteRoundModal')">✕</button>
+    <h2>Delete Round?</h2>
+    <p class="modal-sub">This will permanently delete the round, all submissions and all votes. This cannot be undone.</p>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('deleteRoundModal')">Cancel</button>
+      <button class="btn btn-danger" id="btnConfirmDelete" onclick="deleteRound()" style="background:var(--accent);color:white;border:none">Delete Forever</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -1041,14 +1057,17 @@ function renderRoundDetail(round) {
   let actionBtn = '';
   if (round.stage === 'submit') actionBtn = `
     <button class="btn btn-primary btn-sm" onclick="showSubmitModal()">Submit Song</button>
-    <button class="btn btn-secondary btn-sm" onclick="advanceRound('${round.id}','vote')">→ Move to Voting</button>`;
+    <button class="btn btn-secondary btn-sm" onclick="advanceRound('${round.id}','vote')">→ Move to Voting</button>
+    <button class="btn btn-danger btn-sm" onclick="confirmDeleteRound('${round.id}')">🗑 Delete Round</button>`;
   if (round.stage === 'vote') actionBtn = `
     <button class="btn btn-gold btn-sm" onclick="showVoteModal('${round.id}')">Cast Votes 🗳️</button>
     <button class="btn btn-secondary btn-sm" onclick="advanceRound('${round.id}','results')">→ View Results</button>
-    <button class="btn btn-secondary btn-sm" onclick="advanceRound('${round.id}','submit')">↩ Reopen Submissions</button>`;
+    <button class="btn btn-secondary btn-sm" onclick="advanceRound('${round.id}','submit')">↩ Reopen Submissions</button>
+    <button class="btn btn-danger btn-sm" onclick="confirmDeleteRound('${round.id}')">🗑 Delete Round</button>`;
   if (round.stage === 'results') actionBtn = `
     <button class="btn btn-secondary btn-sm" onclick="advanceRound('${round.id}','vote')">↩ Reopen Voting</button>
-    <button class="btn btn-secondary btn-sm" onclick="advanceRound('${round.id}','submit')">↩ Reopen Submissions</button>`;
+    <button class="btn btn-secondary btn-sm" onclick="advanceRound('${round.id}','submit')">↩ Reopen Submissions</button>
+    <button class="btn btn-danger btn-sm" onclick="confirmDeleteRound('${round.id}')">🗑 Delete Round</button>`;
 
   el.innerHTML = `
     <div class="round-stage">
@@ -1091,7 +1110,7 @@ function renderSubmission(s, i, round, voteTotals) {
       <div class="sub-info">
         <div class="sub-song">${escHtml(s.song)}</div>
         <div class="sub-artist">${escHtml(s.artist)}</div>
-        <div class="sub-submitter" style="color:${player?player.color:'var(--accent2)'}">${player?player.name:'?'}</div>
+        ${round.stage==='results' ? `<div class="sub-submitter" style="color:${player?player.color:'var(--accent2)'}">${player?player.name:'?'}</div>` : ''}
         ${s.note?`<div style="font-size:0.78rem;color:var(--muted);font-style:italic;margin-top:3px">"${escHtml(s.note)}"</div>`:''}
         ${voteMeter}
       </div>
@@ -1367,6 +1386,33 @@ function escAttr(s) { return String(s).replace(/'/g,"\\'"); }
 
 function setLoading(on) {
   document.getElementById('loadingOverlay').classList.toggle('hidden', !on);
+}
+
+// ─────────────────────────────────────────────
+//  DELETE ROUND
+// ─────────────────────────────────────────────
+let pendingDeleteRoundId = null;
+
+function confirmDeleteRound(roundId) {
+  pendingDeleteRoundId = roundId;
+  openModal('deleteRoundModal');
+}
+
+async function deleteRound() {
+  if (!pendingDeleteRoundId) return;
+  const btn = document.getElementById('btnConfirmDelete');
+  btn.disabled = true; btn.textContent = 'Deleting…';
+
+  // Delete votes, submissions, then round (cascade should handle it but be explicit)
+  const { error } = await sb.from('rounds').delete().eq('id', pendingDeleteRoundId);
+
+  btn.disabled = false; btn.textContent = 'Delete Forever';
+  if (error) { showToast('Error: ' + error.message, true); return; }
+
+  closeModal('deleteRoundModal');
+  pendingDeleteRoundId = null;
+  currentRoundIdx = 0;
+  showToast('Round deleted 🗑');
 }
 
 // ─────────────────────────────────────────────
